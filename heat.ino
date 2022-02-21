@@ -20,11 +20,21 @@
 
 #define PIN_VIN (A3)
 
-#define PIN_HEAT_4 (7)
+#define PIN_HEAT_CH_1 (4)
+#define PIN_HEAT_CH_2 (5)
+#define PIN_HEAT_CH_3 (6)
+#define PIN_HEAT_CH_4 (7)
+
+#define PIN_TEST (9)
 
 void setup() {
   Serial.begin(9600);
-  pinMode(PIN_HEAT_4, OUTPUT);
+  pinMode(PIN_HEAT_CH_1, OUTPUT);
+  pinMode(PIN_HEAT_CH_2, OUTPUT);
+  pinMode(PIN_HEAT_CH_3, OUTPUT);
+  pinMode(PIN_HEAT_CH_4, OUTPUT);
+
+  // pinMode(PIN_TEST, OUTPUT);
 }
 
 void loop() {
@@ -32,27 +42,80 @@ void loop() {
   static int16_t head_cm = 0;
 
   static uint32_t vbat_filter = 0;
+  static uint8_t pwmCounter = 0;
 
-  delay(1000);
-  // uint16_t vbat_mv = ((uint16_t)analogRead(PIN_VBAT) * 111) >> 2;
+  static uint8_t tcnt0_old = 0;
+  uint8_t tcnt0_new = TCNT0 & 0xC0;  // triggered at T0OVF x 4
+  if(tcnt0_old != tcnt0_new){
+    tcnt0_old = tcnt0_new;
+    // timer0 change event
+    pwmCounter++;
 
-  uint32_t vbat_raw = analogRead(PIN_VIN);
-  if (vbat_filter == 0) {
-    vbat_filter = vbat_raw << 8L;
+    // digitalWrite(PIN_HEAT_CH_4, HIGH);
+    // digitalWrite(PIN_HEAT_CH_4, LOW);
+    // analogWrite(PIN_TEST, 5);
+
+    uint32_t vbat_raw = analogRead(PIN_VIN);
+    if (vbat_filter == 0) {
+      vbat_filter = vbat_raw << 8L;
+    }
+
+    vbat_filter -= vbat_filter >> 8L;
+    vbat_filter += vbat_raw;
+
+    uint16_t vSolar_dv = ((vbat_filter >> 8L) * 354L) >> 8L; // 350 uncal'd
+    uint16_t vTarget_dv = 650;
+
+    uint8_t demand = 0;
+    if(vSolar_dv > vTarget_dv){
+      uint16_t error = vSolar_dv - vTarget_dv;
+      if (error > 63){
+        error = 63;
+      }
+      demand = error << 2;
+    }
+
+    // demand = 0x88;
+
+    uint8_t counter = pwmCounter << 4;
+    if((counter == 0) || (counter > demand)){
+      digitalWrite(PIN_HEAT_CH_1, LOW);
+    } else{
+      digitalWrite(PIN_HEAT_CH_1, HIGH);
+    }
+
+    if(demand >= 0x04) demand -= 0x04;
+
+    counter += 0x40;
+    if((counter == 0) || (counter > demand)){
+      digitalWrite(PIN_HEAT_CH_2, LOW);
+    } else{
+      digitalWrite(PIN_HEAT_CH_2, HIGH);
+    }
+
+    if(demand >= 0x04) demand -= 0x04;
+
+    counter += 0x40;
+    if((counter == 0) || (counter > demand)){
+      digitalWrite(PIN_HEAT_CH_3, LOW);
+    } else{
+      digitalWrite(PIN_HEAT_CH_3, HIGH);
+    }
+
+    if(demand >= 0x04) demand -= 0x04;
+
+    counter += 0x40;
+    if((counter == 0) || (counter > demand)){
+      digitalWrite(PIN_HEAT_CH_4, LOW);
+    } else{
+      digitalWrite(PIN_HEAT_CH_4, HIGH);
+    }
+
+    if(pwmCounter == 0){
+      Serial.print("vbat ");
+      Serial.println(vSolar_dv);
+    }
+
   }
-
-  vbat_filter -= vbat_filter >> 8L;
-  vbat_filter += vbat_raw;
-
-  uint32_t vbat_mv = ((vbat_filter >> 8L) * 7104L) >> 8;
-
-  Serial.print("vbat ");
-  Serial.println(vbat_mv);
-
-  delay(1000);
-  unsigned long newMinutes = (millis() >> 16); // dt = 65.536 secs
-  Serial.print("time ");
-  Serial.println(newMinutes);
-
 
 }
